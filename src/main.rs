@@ -57,7 +57,6 @@ struct DeviceUpdatedEvent {
     id: btleplug::platform::PeripheralId,
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct DeviceConnectedEvent {
     event: String,
