@@ -37,6 +37,12 @@ struct Config {
 
     #[envconfig(from = "MQTT_TOPIC_QOS")]
     pub mqtt_topic_qos: Option<i32>,
+
+    #[envconfig(from = "MQTT_KEEP_ALIVE_INTERVAL_SEC", default = "10")]
+    pub mqtt_keep_alive_interval_seconds: u64,
+
+    #[envconfig(from = "MQTT_CLEAN_START", default = "false")]
+    pub mqtt_clean_start: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -106,8 +112,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let conn_opts = mqtt::ConnectOptionsBuilder::new()
-        .keep_alive_interval(Duration::from_secs(20))
-        .clean_start(false)
+        .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_interval_seconds))
+        .clean_start(config.mqtt_clean_start)
         .properties(props)
         .user_name(config.mqtt_username.unwrap_or_default())
         .password(config.mqtt_password.unwrap_or_default())
