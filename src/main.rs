@@ -65,9 +65,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
-    let central = get_central().await?;
-    let mut events = central.events().await?;
-    central.start_scan(ScanFilter::default()).await?;
+    let adapter = get_adapter().await?;
+    let mut events = adapter.events().await?;
+    adapter.start_scan(ScanFilter::default()).await?;
     info!("Scanning for ble events..");
 
     while let Some(event) = events.next().await {
@@ -140,7 +140,7 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
     }
 }
 
-async fn get_central() -> anyhow::Result<Adapter> {
+async fn get_adapter() -> anyhow::Result<Adapter> {
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
     return Ok(adapters.into_iter().nth(0).context("no adapter")?);
