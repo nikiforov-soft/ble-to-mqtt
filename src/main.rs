@@ -117,7 +117,7 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
             Ok(_) => { return; }
             Err(err) => match err {
                 PahoDescr(id, reason) => {
-                    if id == MQTT_CLIENT_DISCONNECTED {
+                    if id != MQTT_CLIENT_DISCONNECTED {
                         error!("Failed to publish message id: {:?} reason: {:?}", id, reason);
                         continue;
                     }
