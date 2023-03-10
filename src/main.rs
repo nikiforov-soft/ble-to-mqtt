@@ -1,100 +1,24 @@
-use log::{error, warn, info, LevelFilter};
-use envconfig::Envconfig;
+use std::error::Error;
+use std::io::Write;
+use std::time::Duration;
+
+use anyhow::Context;
 use btleplug::api::{Central, CentralEvent, Manager as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
-use uuid::Uuid;
-use std::collections::HashMap;
-use std::error::Error;
-use std::time::Duration;
-use std::io::Write;
 use chrono::Local;
-use anyhow::Context;
+use envconfig::Envconfig;
 use futures::stream::StreamExt;
+use log::{error, info, LevelFilter, warn};
 use mqtt::properties;
 use paho_mqtt as mqtt;
 use paho_mqtt::{AsyncClient, Topic};
 use paho_mqtt::Error::PahoDescr;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use tokio::time;
+use config::Config;
+use events::{*};
 
-#[derive(Envconfig)]
-struct Config {
-    #[envconfig(from = "MQTT_HOST")]
-    pub mqtt_host: String,
-
-    #[envconfig(from = "MQTT_PORT", default = "1883")]
-    pub mqtt_port: u16,
-
-    #[envconfig(from = "MQTT_USERNAME")]
-    pub mqtt_username: Option<String>,
-
-    #[envconfig(from = "MQTT_PASSWORD")]
-    pub mqtt_password: Option<String>,
-
-    #[envconfig(from = "MQTT_CLIENT_ID")]
-    pub mqtt_client_id: Option<String>,
-
-    #[envconfig(from = "MQTT_TOPIC")]
-    pub mqtt_topic: String,
-
-    #[envconfig(from = "MQTT_TOPIC_QOS")]
-    pub mqtt_topic_qos: Option<i32>,
-
-    #[envconfig(from = "MQTT_KEEP_ALIVE_INTERVAL_SEC", default = "10")]
-    pub mqtt_keep_alive_interval_seconds: u64,
-
-    #[envconfig(from = "MQTT_CLEAN_START", default = "false")]
-    pub mqtt_clean_start: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeviceDiscoveredEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeviceUpdatedEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeviceConnectedEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeviceDisconnectedEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-}
-
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-struct ManufacturerDataAdvertisementEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-    manufacturer_data: HashMap<u16, String>,
-}
-
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-struct ServiceDataAdvertisementEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-    service_data: HashMap<Uuid, String>,
-}
-
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-struct ServicesAdvertisementEvent {
-    event: String,
-    id: btleplug::platform::PeripheralId,
-    services: Vec<Uuid>,
-}
+mod config;
+mod events;
 
 const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
@@ -141,8 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
-    let manager = Manager::new().await?;
-    let central = get_central(&manager).await?;
+    let central = get_central().await?;
     let mut events = central.events().await?;
     central.start_scan(ScanFilter::default()).await?;
     info!("Scanning for ble events..");
@@ -217,7 +140,8 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
     }
 }
 
-async fn get_central(manager: &Manager) -> anyhow::Result<Adapter> {
+async fn get_central() -> anyhow::Result<Adapter> {
+    let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
     return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
