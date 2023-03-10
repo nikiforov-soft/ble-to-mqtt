@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Initializing configuration");
     let config = Config::init_from_env()?;
 
-    info!("Connecting to mqtt broker..");
+    info!("Connecting to mqtt broker mqtt://{}:{} ..", config.mqtt_host, config.mqtt_port);
     let mqtt_client = mqtt_init(&config).await?;
     let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
@@ -59,6 +59,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+async fn get_adapter() -> anyhow::Result<Adapter> {
+    let manager = Manager::new().await?;
+    let adapters = manager.adapters().await?;
+    return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
 
 fn process_central_event(event: CentralEvent) -> anyhow::Result<Vec<u8>> {
@@ -150,10 +156,4 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
             time::sleep(Duration::from_secs(1)).await;
         }
     }
-}
-
-async fn get_adapter() -> anyhow::Result<Adapter> {
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
