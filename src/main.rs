@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .client_id(config.mqtt_client_id.unwrap_or_default())
         .finalize();
 
-    let mqtt_client = mqtt::AsyncClient::new(create_opts).expect("Error creating client");
+    let mqtt_client = AsyncClient::new(create_opts).expect("Error creating client");
 
     // Session will exist for a day (86,400 sec) between connections.
     let props = properties! {
@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     mqtt_client.connect(conn_opts).wait().expect("Error connecting to mqtt broker");
     println!("Connected to mqtt broker");
 
-    let topic = mqtt::Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
+    let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
     let manager = Manager::new().await?;
     let central = get_central(&manager).await?;
