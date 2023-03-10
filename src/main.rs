@@ -13,6 +13,7 @@ use mqtt::properties;
 use paho_mqtt as mqtt;
 use paho_mqtt::{AsyncClient, Topic};
 use paho_mqtt::Error::PahoDescr;
+use serde_json::to_vec;
 use tokio::time;
 
 use config::Config;
@@ -68,37 +69,30 @@ async fn get_adapter() -> anyhow::Result<Adapter> {
 }
 
 fn process_central_event(event: CentralEvent) -> anyhow::Result<Vec<u8>> {
-    match event {
-        CentralEvent::DeviceDiscovered(id) => {
-            Ok(serde_json::to_vec(&DeviceDiscoveredEvent { event: "DeviceDiscovered".into(), id })?)
-        }
-        CentralEvent::DeviceUpdated(id) => {
-            Ok(serde_json::to_vec(&DeviceUpdatedEvent { event: "DeviceUpdated".into(), id })?)
-        }
-        CentralEvent::DeviceConnected(id) => {
-            Ok(serde_json::to_vec(&DeviceConnectedEvent { event: "DeviceConnected".into(), id })?)
-        }
-        CentralEvent::DeviceDisconnected(id) => {
-            Ok(serde_json::to_vec(&DeviceDisconnectedEvent { event: "DeviceDisconnected".into(), id })?)
-        }
+    let payload = match event {
+        CentralEvent::DeviceDiscovered(id) => to_vec(&DeviceDiscoveredEvent { event: "DeviceDiscovered".into(), id })?,
+        CentralEvent::DeviceUpdated(id) => to_vec(&DeviceUpdatedEvent { event: "DeviceUpdated".into(), id })?,
+        CentralEvent::DeviceConnected(id) => to_vec(&DeviceConnectedEvent { event: "DeviceConnected".into(), id })?,
+        CentralEvent::DeviceDisconnected(id) => to_vec(&DeviceDisconnectedEvent { event: "DeviceDisconnected".into(), id })?,
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
             let data = manufacturer_data.
                 iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            Ok(serde_json::to_vec(&ManufacturerDataAdvertisementEvent { event: "ManufacturerDataAdvertisement".into(), id, manufacturer_data: data })?)
+            to_vec(&ManufacturerDataAdvertisementEvent { event: "ManufacturerDataAdvertisement".into(), id, manufacturer_data: data })?
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
             let data = service_data.
                 iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            Ok(serde_json::to_vec(&ServiceDataAdvertisementEvent { event: "ServiceDataAdvertisement".into(), id, service_data: data })?)
+            to_vec(&ServiceDataAdvertisementEvent { event: "ServiceDataAdvertisement".into(), id, service_data: data })?
         }
         CentralEvent::ServicesAdvertisement { id, services } => {
-            Ok(serde_json::to_vec(&ServicesAdvertisementEvent { event: "ServicesAdvertisement".into(), id, services })?)
+            to_vec(&ServicesAdvertisementEvent { event: "ServicesAdvertisement".into(), id, services })?
         }
-    }
+    };
+    Ok(payload)
 }
 
 async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
