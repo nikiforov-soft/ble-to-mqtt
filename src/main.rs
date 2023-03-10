@@ -88,7 +88,7 @@ struct ServicesAdvertisementEvent {
     services: Vec<Uuid>,
 }
 
-const MQTTCLIENT_DISCONNECTED: i32 = -3;
+const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -101,15 +101,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mqtt_client = AsyncClient::new(create_opts).expect("Error creating client");
 
-    // Session will exist for a day (86,400 sec) between connections.
     let props = properties! {
         mqtt::PropertyCode::SessionExpiryInterval => 86400,
     };
 
-    // Connect with MQTT v5 and a persistent server session (no clean start).
-    // For a persistent v5 session, we must set the Session Expiry Interval
-    // on the server. Here we set that requests will persist for a day
-    // (86,400sec) if the service disconnects or restarts.
     let conn_opts = mqtt::ConnectOptionsBuilder::new()
         .keep_alive_interval(Duration::from_secs(20))
         .clean_start(false)
@@ -177,7 +172,7 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
             Ok(_) => { return; }
             Err(err) => match err {
                 PahoDescr(id, reason) => {
-                    if id == MQTTCLIENT_DISCONNECTED {
+                    if id == MQTT_CLIENT_DISCONNECTED {
                         println!("Failed to publish message id: {:?} reason: {:?}", id, reason);
                         continue;
                     }
