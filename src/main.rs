@@ -103,7 +103,7 @@ async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
         mqtt::PropertyCode::SessionExpiryInterval => 86400,
     };
 
-    let conn_opts = mqtt::ConnectOptionsBuilder::new()
+    let conn_opts = mqtt::ConnectOptionsBuilder::new_v5()
         .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_interval_seconds))
         .clean_start(config.mqtt_clean_start)
         .properties(props)

@@ -5,10 +5,7 @@ use serde_with::serde_as;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
-pub struct Event<T>
-    where
-        T: Serialize,
-{
+pub struct Event<T> where T: Serialize {
     pub event: String,
     pub id: btleplug::platform::PeripheralId,
     pub data: T,
