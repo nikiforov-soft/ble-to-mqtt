@@ -9,6 +9,7 @@ use anyhow::Context;
 use futures::stream::StreamExt;
 use mqtt::properties;
 use paho_mqtt as mqtt;
+use paho_mqtt::{AsyncClient, Topic};
 use paho_mqtt::Error::PahoDescr;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -163,34 +164,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        for _ in 1..=30 {
-            let mut reconnected = false;
-            if let Err(err) = topic.publish(payload.to_owned()).await {
-                match err {
-                    PahoDescr(id, reason) => {
-                        if id == MQTTCLIENT_DISCONNECTED {
-                            println!("Connection to the mqtt broker was lost, attempting to reconnect..");
-                            match mqtt_client.reconnect().await {
-                                Ok(_) => {
-                                    println!("Reconnected");
-                                    reconnected = true;
-                                }
-                                Err(reconnect_err) => println!("Failed to reconnect: {:?}", reconnect_err),
-                            }
-                        } else {
-                            println!("Failed to publish message id: {:?} reason: {:?}", id, reason);
-                        }
-                    }
-                    _ => println!("Failed to publish message: {:?}", err),
-                }
-            }
-            if !reconnected {
-                time::sleep(Duration::from_secs(1)).await;
-            }
-        }
+        publish_to_topic(&mqtt_client, &topic, &payload).await
     }
 
     Ok(())
+}
+
+async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payload: &Vec<u8>) {
+    for _ in 1..=30 {
+        let mut reconnected = false;
+        match topic.publish(payload.to_owned()).await {
+            Ok(_) => { return; }
+            Err(err) => match err {
+                PahoDescr(id, reason) => {
+                    if id == MQTTCLIENT_DISCONNECTED {
+                        println!("Failed to publish message id: {:?} reason: {:?}", id, reason);
+                        continue;
+                    }
+
+                    println!("Connection to the mqtt broker was lost, attempting to reconnect..");
+                    match mqtt_client.reconnect().await {
+                        Ok(_) => {
+                            println!("Reconnected");
+                            reconnected = true;
+                        }
+                        Err(reconnect_err) => println!("Failed to reconnect: {:?}", reconnect_err),
+                    }
+                }
+                _ => println!("Failed to publish message: {:?}", err),
+            }
+        }
+        if !reconnected {
+            time::sleep(Duration::from_secs(1)).await;
+        }
+    }
 }
 
 async fn get_central(manager: &Manager) -> anyhow::Result<Adapter> {
