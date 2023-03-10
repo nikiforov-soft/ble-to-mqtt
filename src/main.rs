@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use log::{error, warn, info, LevelFilter};
 use envconfig::Envconfig;
 use btleplug::api::{Central, CentralEvent, Manager as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
 use uuid::Uuid;
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
+use std::io::Write;
+use chrono::Local;
 use anyhow::Context;
 use futures::stream::StreamExt;
 use mqtt::properties;
@@ -97,6 +100,20 @@ const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::builder()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{}] {}: {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter_level(LevelFilter::Info)
+        .init();
+
+
     let config = Config::init_from_env()?;
 
     let create_opts = mqtt::CreateOptionsBuilder::new()
@@ -118,9 +135,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .password(config.mqtt_password.unwrap_or_default())
         .finalize();
 
-    println!("Connecting to mqtt broker..");
+    info!("Connecting to mqtt broker..");
     mqtt_client.connect(conn_opts).wait().expect("Error connecting to mqtt broker");
-    println!("Connected to mqtt broker");
+    info!("Connected to mqtt broker");
 
     let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
@@ -128,7 +145,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let central = get_central(&manager).await?;
     let mut events = central.events().await?;
     central.start_scan(ScanFilter::default()).await?;
-    println!("Scanning for ble events..");
+    info!("Scanning for ble events..");
 
     while let Some(event) = events.next().await {
         let payload: Vec<u8>;
@@ -178,20 +195,20 @@ async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payl
             Err(err) => match err {
                 PahoDescr(id, reason) => {
                     if id == MQTT_CLIENT_DISCONNECTED {
-                        println!("Failed to publish message id: {:?} reason: {:?}", id, reason);
+                        error!("Failed to publish message id: {:?} reason: {:?}", id, reason);
                         continue;
                     }
 
-                    println!("Connection to the mqtt broker was lost, attempting to reconnect..");
+                    warn!("Connection to the mqtt broker was lost, attempting to reconnect..");
                     match mqtt_client.reconnect().await {
                         Ok(_) => {
-                            println!("Reconnected");
+                            info!("Reconnected");
                             reconnected = true;
                         }
-                        Err(reconnect_err) => println!("Failed to reconnect: {:?}", reconnect_err),
+                        Err(reconnect_err) => error!("Failed to reconnect: {:?}", reconnect_err),
                     }
                 }
-                _ => println!("Failed to publish message: {:?}", err),
+                _ => error!("Failed to publish message: {:?}", err),
             }
         }
         if !reconnected {
