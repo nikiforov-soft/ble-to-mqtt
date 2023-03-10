@@ -70,27 +70,23 @@ async fn get_adapter() -> anyhow::Result<Adapter> {
 
 fn process_central_event(event: CentralEvent) -> anyhow::Result<Vec<u8>> {
     let payload = match event {
-        CentralEvent::DeviceDiscovered(id) => to_vec(&DeviceDiscoveredEvent { event: "DeviceDiscovered".into(), id })?,
-        CentralEvent::DeviceUpdated(id) => to_vec(&DeviceUpdatedEvent { event: "DeviceUpdated".into(), id })?,
-        CentralEvent::DeviceConnected(id) => to_vec(&DeviceConnectedEvent { event: "DeviceConnected".into(), id })?,
-        CentralEvent::DeviceDisconnected(id) => to_vec(&DeviceDisconnectedEvent { event: "DeviceDisconnected".into(), id })?,
+        CentralEvent::DeviceDiscovered(id) => to_vec(&Event::new_simple("DeviceDiscovered".into(), id))?,
+        CentralEvent::DeviceUpdated(id) => to_vec(&Event::new_simple("DeviceUpdated".into(), id))?,
+        CentralEvent::DeviceConnected(id) => to_vec(&Event::new_simple("DeviceConnected".into(), id))?,
+        CentralEvent::DeviceDisconnected(id) => to_vec(&Event::new_simple("DeviceDisconnected".into(), id))?,
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
-            let data = manufacturer_data.
-                iter().
+            let data = manufacturer_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ManufacturerDataAdvertisementEvent { event: "ManufacturerDataAdvertisement".into(), id, manufacturer_data: data })?
+            to_vec(&ManufacturerDataAdvertisementEvent::new(id, data))?
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-            let data = service_data.
-                iter().
+            let data = service_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ServiceDataAdvertisementEvent { event: "ServiceDataAdvertisement".into(), id, service_data: data })?
+            to_vec(&ServiceDataAdvertisementEvent::new(id, data))?
         }
-        CentralEvent::ServicesAdvertisement { id, services } => {
-            to_vec(&ServicesAdvertisementEvent { event: "ServicesAdvertisement".into(), id, services })?
-        }
+        CentralEvent::ServicesAdvertisement { id, services } => to_vec(&ServicesAdvertisementEvent::new(id, services))?
     };
     Ok(payload)
 }
