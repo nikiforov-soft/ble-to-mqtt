@@ -14,6 +14,7 @@ use paho_mqtt as mqtt;
 use paho_mqtt::{AsyncClient, Topic};
 use paho_mqtt::Error::PahoDescr;
 use tokio::time;
+
 use config::Config;
 use events::{*};
 
@@ -38,14 +39,71 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
 
+    info!("Initializing configuration");
     let config = Config::init_from_env()?;
 
+    info!("Connecting to mqtt broker..");
+    let mqtt_client = mqtt_init(&config).await?;
+    let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
+
+    let adapter = get_adapter().await?;
+    let mut events = adapter.events().await?;
+    adapter.start_scan(ScanFilter::default()).await?;
+
+    info!("Scanning for ble events..");
+    while let Some(event) = events.next().await {
+        match process_central_event(event) {
+            Ok(payload) => publish_to_topic(&mqtt_client, &topic, &payload).await,
+            Err(err) => error!("Failed to process central event: {:?}", err)
+        }
+    }
+
+    Ok(())
+}
+
+fn process_central_event(event: CentralEvent) -> anyhow::Result<Vec<u8>> {
+    let payload: Vec<u8>;
+    match event {
+        CentralEvent::DeviceDiscovered(id) => {
+            payload = serde_json::to_vec(&DeviceDiscoveredEvent { event: "DeviceDiscovered".into(), id })?;
+        }
+        CentralEvent::DeviceUpdated(id) => {
+            payload = serde_json::to_vec(&DeviceUpdatedEvent { event: "DeviceUpdated".into(), id })?;
+        }
+        CentralEvent::DeviceConnected(id) => {
+            payload = serde_json::to_vec(&DeviceConnectedEvent { event: "DeviceConnected".into(), id })?;
+        }
+        CentralEvent::DeviceDisconnected(id) => {
+            payload = serde_json::to_vec(&DeviceDisconnectedEvent { event: "DeviceDisconnected".into(), id })?;
+        }
+        CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
+            let data = manufacturer_data.
+                iter().
+                map(|(k, v)| (k.clone(), hex::encode(v))).
+                collect();
+            payload = serde_json::to_vec(&ManufacturerDataAdvertisementEvent { event: "ManufacturerDataAdvertisement".into(), id, manufacturer_data: data })?;
+        }
+        CentralEvent::ServiceDataAdvertisement { id, service_data } => {
+            let data = service_data.
+                iter().
+                map(|(k, v)| (k.clone(), hex::encode(v))).
+                collect();
+            payload = serde_json::to_vec(&ServiceDataAdvertisementEvent { event: "ServiceDataAdvertisement".into(), id, service_data: data })?;
+        }
+        CentralEvent::ServicesAdvertisement { id, services } => {
+            payload = serde_json::to_vec(&ServicesAdvertisementEvent { event: "ServicesAdvertisement".into(), id, services })?;
+        }
+    }
+    Ok(payload)
+}
+
+async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
     let create_opts = mqtt::CreateOptionsBuilder::new()
         .server_uri(format!("mqtt://{}:{}", config.mqtt_host, config.mqtt_port))
-        .client_id(config.mqtt_client_id.unwrap_or_default())
+        .client_id(config.mqtt_client_id.clone().unwrap_or_default())
         .finalize();
 
-    let mqtt_client = AsyncClient::new(create_opts).expect("Error creating client");
+    let mqtt_client = AsyncClient::new(create_opts)?;
 
     let props = properties! {
         mqtt::PropertyCode::SessionExpiryInterval => 86400,
@@ -55,59 +113,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_interval_seconds))
         .clean_start(config.mqtt_clean_start)
         .properties(props)
-        .user_name(config.mqtt_username.unwrap_or_default())
-        .password(config.mqtt_password.unwrap_or_default())
+        .user_name(config.mqtt_username.clone().unwrap_or_default())
+        .password(config.mqtt_password.clone().unwrap_or_default())
         .finalize();
 
-    info!("Connecting to mqtt broker..");
-    mqtt_client.connect(conn_opts).wait().expect("Error connecting to mqtt broker");
-    info!("Connected to mqtt broker");
+    mqtt_client.connect(conn_opts).await?;
 
-    let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
-
-    let adapter = get_adapter().await?;
-    let mut events = adapter.events().await?;
-    adapter.start_scan(ScanFilter::default()).await?;
-    info!("Scanning for ble events..");
-
-    while let Some(event) = events.next().await {
-        let payload: Vec<u8>;
-        match event {
-            CentralEvent::DeviceDiscovered(id) => {
-                payload = serde_json::to_vec(&DeviceDiscoveredEvent { event: "DeviceDiscovered".into(), id })?;
-            }
-            CentralEvent::DeviceUpdated(id) => {
-                payload = serde_json::to_vec(&DeviceUpdatedEvent { event: "DeviceUpdated".into(), id })?;
-            }
-            CentralEvent::DeviceConnected(id) => {
-                payload = serde_json::to_vec(&DeviceConnectedEvent { event: "DeviceConnected".into(), id })?;
-            }
-            CentralEvent::DeviceDisconnected(id) => {
-                payload = serde_json::to_vec(&DeviceDisconnectedEvent { event: "DeviceDisconnected".into(), id })?;
-            }
-            CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
-                let data = manufacturer_data.
-                    iter().
-                    map(|(k, v)| (k.clone(), hex::encode(v))).
-                    collect();
-                payload = serde_json::to_vec(&ManufacturerDataAdvertisementEvent { event: "ManufacturerDataAdvertisement".into(), id, manufacturer_data: data })?;
-            }
-            CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-                let data = service_data.
-                    iter().
-                    map(|(k, v)| (k.clone(), hex::encode(v))).
-                    collect();
-                payload = serde_json::to_vec(&ServiceDataAdvertisementEvent { event: "ServiceDataAdvertisement".into(), id, service_data: data })?;
-            }
-            CentralEvent::ServicesAdvertisement { id, services } => {
-                payload = serde_json::to_vec(&ServicesAdvertisementEvent { event: "ServicesAdvertisement".into(), id, services })?;
-            }
-        }
-
-        publish_to_topic(&mqtt_client, &topic, &payload).await
-    }
-
-    Ok(())
+    Ok(mqtt_client)
 }
 
 async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payload: &Vec<u8>) {
