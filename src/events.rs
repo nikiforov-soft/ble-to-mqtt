@@ -7,14 +7,18 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize)]
 pub struct Event<T> where T: Serialize {
     pub event: String,
-    pub id: btleplug::platform::PeripheralId,
+    pub local_name: Option<String>,
+    pub rssi: Option<i16>,
+    pub id: String,
     pub data: T,
 }
 
 impl<T> Event<T> where T: Serialize {
-    pub(crate) fn new(event: String, id: btleplug::platform::PeripheralId, data: T) -> Self {
+    pub(crate) fn new(event: String, local_name: Option<String>, rssi: Option<i16>, id: String, data: T) -> Self {
         Self {
             event,
+            local_name,
+            rssi,
             id,
             data,
         }
@@ -22,9 +26,11 @@ impl<T> Event<T> where T: Serialize {
 }
 
 impl Event<Option<String>> {
-    pub(crate) fn new_simple(event: String, id: btleplug::platform::PeripheralId) -> Self {
+    pub(crate) fn new_simple(event: String, local_name: Option<String>, rssi: Option<i16>, id: String) -> Self {
         Self {
             event,
+            local_name,
+            rssi,
             id,
             data: None,
         }
@@ -38,8 +44,13 @@ pub struct ManufacturerDataAdvertisementEvent {
 }
 
 impl ManufacturerDataAdvertisementEvent {
-    pub(crate) fn new(id: btleplug::platform::PeripheralId, manufacturer_data: HashMap<u16, String>) -> Event<Self> {
-        Event::new("ManufacturerDataAdvertisementEvent".into(), id, ManufacturerDataAdvertisementEvent { manufacturer_data })
+    pub(crate) fn new(
+        local_name: Option<String>,
+        rssi: Option<i16>,
+        id: String,
+        manufacturer_data: HashMap<u16, String>
+    ) -> Event<Self> {
+        Event::new("ManufacturerDataAdvertisementEvent".into(), local_name, rssi, id, ManufacturerDataAdvertisementEvent { manufacturer_data })
     }
 }
 
@@ -50,8 +61,13 @@ pub struct ServiceDataAdvertisementEvent {
 }
 
 impl ServiceDataAdvertisementEvent {
-    pub(crate) fn new(id: btleplug::platform::PeripheralId, service_data: HashMap<Uuid, String>) -> Event<Self> {
-        Event::new("ServiceDataAdvertisementEvent".into(), id, ServiceDataAdvertisementEvent { service_data })
+    pub(crate) fn new(
+        local_name: Option<String>,
+        rssi: Option<i16>,
+        id: String,
+        service_data: HashMap<Uuid, String>
+    ) -> Event<Self> {
+        Event::new("ServiceDataAdvertisementEvent".into(), local_name, rssi, id, ServiceDataAdvertisementEvent { service_data })
     }
 }
 
@@ -62,7 +78,12 @@ pub struct ServicesAdvertisementEvent {
 }
 
 impl ServicesAdvertisementEvent {
-    pub(crate) fn new(id: btleplug::platform::PeripheralId, services: Vec<Uuid>) -> Event<Self> {
-        Event::new("ServicesAdvertisement".into(), id, ServicesAdvertisementEvent { services })
+    pub(crate) fn new(
+        local_name: Option<String>,
+        rssi: Option<i16>,
+        id: String,
+        services: Vec<Uuid>
+    ) -> Event<Self> {
+        Event::new("ServicesAdvertisement".into(), local_name, rssi, id, ServicesAdvertisementEvent { services })
     }
 }

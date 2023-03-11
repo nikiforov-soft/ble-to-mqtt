@@ -3,7 +3,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use anyhow::Context;
-use btleplug::api::{Central, CentralEvent, Manager as _, ScanFilter};
+use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
 use chrono::Local;
 use envconfig::Envconfig;
@@ -45,7 +45,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Connecting to mqtt broker mqtt://{}:{} ..", config.mqtt_host, config.mqtt_port);
     let mqtt_client = mqtt_init(&config).await?;
-    let topic = Topic::new(&mqtt_client, config.mqtt_topic, config.mqtt_topic_qos.unwrap_or_default());
 
     let adapter = get_adapter().await?;
     let mut events = adapter.events().await?;
@@ -53,8 +52,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Scanning for ble events..");
     while let Some(event) = events.next().await {
-        match process_central_event(event) {
-            Ok(payload) => publish_to_topic(&mqtt_client, &topic, &payload).await,
+        match process_central_event(&config, &adapter, event).await {
+            Ok((payload, topic_name)) => {
+                info!("topic: {}", &topic_name);
+                let topic = Topic::new(&mqtt_client, topic_name, config.mqtt_topic_qos.unwrap_or_default());
+                publish_to_topic(&mqtt_client, topic, &payload).await
+            }
             Err(err) => error!("Failed to process central event: {:?}", err)
         }
     }
@@ -68,27 +71,60 @@ async fn get_adapter() -> anyhow::Result<Adapter> {
     return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
 
-fn process_central_event(event: CentralEvent) -> anyhow::Result<Vec<u8>> {
+async fn process_central_event(config: &Config, adapter: &Adapter, event: CentralEvent) -> anyhow::Result<(Vec<u8>, String)> {
+    let topic: String;
     let payload = match event {
-        CentralEvent::DeviceDiscovered(id) => to_vec(&Event::new_simple("DeviceDiscovered".into(), id))?,
-        CentralEvent::DeviceUpdated(id) => to_vec(&Event::new_simple("DeviceUpdated".into(), id))?,
-        CentralEvent::DeviceConnected(id) => to_vec(&Event::new_simple("DeviceConnected".into(), id))?,
-        CentralEvent::DeviceDisconnected(id) => to_vec(&Event::new_simple("DeviceDisconnected".into(), id))?,
+        CentralEvent::DeviceDiscovered(id) => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDiscovered", name.clone().unwrap_or(id.to_string()));
+            to_vec(&Event::new_simple("DeviceDiscovered".into(), name, rssi, id.to_string()))?
+        }
+        CentralEvent::DeviceUpdated(id) => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceUpdated", name.clone().unwrap_or(id.to_string()));
+            to_vec(&Event::new_simple("DeviceUpdated".into(), name, rssi, id.to_string()))?
+        }
+        CentralEvent::DeviceConnected(id) => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceConnected", name.clone().unwrap_or(id.to_string()));
+            to_vec(&Event::new_simple("DeviceConnected".into(), name, rssi, id.to_string()))?
+        }
+        CentralEvent::DeviceDisconnected(id) => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDisconnected", name.clone().unwrap_or(id.to_string()));
+            to_vec(&Event::new_simple("DeviceDisconnected".into(), name, rssi, id.to_string()))?
+        }
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "ManufacturerDataAdvertisement", name.clone().unwrap_or(id.to_string()));
             let data = manufacturer_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ManufacturerDataAdvertisementEvent::new(id, data))?
+            to_vec(&ManufacturerDataAdvertisementEvent::new(name, rssi, id.to_string(), data))?
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "ServiceDataAdvertisement", name.clone().unwrap_or(id.to_string()));
             let data = service_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ServiceDataAdvertisementEvent::new(id, data))?
+            to_vec(&ServiceDataAdvertisementEvent::new(name, rssi, id.to_string(), data))?
         }
-        CentralEvent::ServicesAdvertisement { id, services } => to_vec(&ServicesAdvertisementEvent::new(id, services))?
+        CentralEvent::ServicesAdvertisement { id, services } => {
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "ServicesAdvertisement", name.clone().unwrap_or(id.to_string()));
+            to_vec(&ServicesAdvertisementEvent::new(name, rssi, id.to_string(), services))?
+        }
     };
-    Ok(payload)
+    Ok((payload, topic))
+}
+
+async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId) -> anyhow::Result<(Option<String>, Option<i16>)> {
+    let peripheral = adapter.peripheral(&id).await?;
+    if let Some(properties) = peripheral.properties().await? {
+        Ok((properties.local_name, properties.rssi))
+    }
+    Ok((None, None))
 }
 
 async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
@@ -116,7 +152,7 @@ async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
     Ok(mqtt_client)
 }
 
-async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: &Topic<'a>, payload: &Vec<u8>) {
+async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: Topic<'a>, payload: &Vec<u8>) {
     for _ in 1..=30 {
         match topic.publish(payload.to_owned()).await {
             Ok(_) => { return; }
