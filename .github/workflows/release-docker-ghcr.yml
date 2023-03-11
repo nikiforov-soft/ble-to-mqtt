@@ -13,7 +13,7 @@ env:
 
 jobs:
   build_and_push_image:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     permissions:
       contents: read
       packages: write
