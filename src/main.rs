@@ -17,10 +17,10 @@ use serde_json::to_vec;
 use tokio::time;
 
 use config::Config;
-use events::{*};
+use event::{*};
 
 mod config;
-mod events;
+mod event;
 
 const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
@@ -73,34 +73,34 @@ async fn get_adapter() -> anyhow::Result<Adapter> {
 
 async fn process_central_event(config: &Config, adapter: &Adapter, event: CentralEvent) -> anyhow::Result<(Vec<u8>, String)> {
     let topic: String;
-    let payload = match event {
+    let event = match event {
         CentralEvent::DeviceDiscovered(id) => {
             let (name, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDiscovered", name.clone().unwrap_or(id.to_string()));
-            to_vec(&Event::new_simple("DeviceDiscovered".into(), name, rssi, id.to_string()))?
+            Event::new(id.to_string(), "DeviceDiscovered".into(), name, rssi, None, None, None)
         }
         CentralEvent::DeviceUpdated(id) => {
             let (name, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceUpdated", name.clone().unwrap_or(id.to_string()));
-            to_vec(&Event::new_simple("DeviceUpdated".into(), name, rssi, id.to_string()))?
+            Event::new(id.to_string(), "DeviceUpdated".into(), name, rssi, None, None, None)
         }
         CentralEvent::DeviceConnected(id) => {
             let (name, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceConnected", name.clone().unwrap_or(id.to_string()));
-            to_vec(&Event::new_simple("DeviceConnected".into(), name, rssi, id.to_string()))?
+            Event::new(id.to_string(), "DeviceConnected".into(), name, rssi, None, None, None)
         }
         CentralEvent::DeviceDisconnected(id) => {
             let (name, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDisconnected", name.clone().unwrap_or(id.to_string()));
-            to_vec(&Event::new_simple("DeviceDisconnected".into(), name, rssi, id.to_string()))?
+            Event::new(id.to_string(), "DeviceDisconnected".into(), name, rssi, None, None, None)
         }
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
-            topic = format!("{}/{}/{}", config.mqtt_topic, "ManufacturerDataAdvertisement", name.clone().unwrap_or(id.to_string()));
             let data = manufacturer_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ManufacturerDataAdvertisementEvent::new(name, rssi, id.to_string(), data))?
+            let (name, rssi) = get_properties(adapter, &id).await?;
+            topic = format!("{}/{}/{}", config.mqtt_topic, "ManufacturerDataAdvertisement", name.clone().unwrap_or(id.to_string()));
+            Event::new(id.to_string(), "ManufacturerDataAdvertisement".into(), name, rssi, Some(data), None, None)
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
             let (name, rssi) = get_properties(adapter, &id).await?;
@@ -108,21 +108,22 @@ async fn process_central_event(config: &Config, adapter: &Adapter, event: Centra
             let data = service_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            to_vec(&ServiceDataAdvertisementEvent::new(name, rssi, id.to_string(), data))?
+            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), name, rssi, None, Some(data), None)
         }
         CentralEvent::ServicesAdvertisement { id, services } => {
             let (name, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "ServicesAdvertisement", name.clone().unwrap_or(id.to_string()));
-            to_vec(&ServicesAdvertisementEvent::new(name, rssi, id.to_string(), services))?
+            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), name, rssi, None, None, Some(services))
         }
     };
+    let payload = to_vec(&event)?;
     Ok((payload, topic))
 }
 
 async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId) -> anyhow::Result<(Option<String>, Option<i16>)> {
     let peripheral = adapter.peripheral(&id).await?;
     if let Some(properties) = peripheral.properties().await? {
-        Ok((properties.local_name, properties.rssi))
+        return Ok((properties.local_name, properties.rssi));
     }
     Ok((None, None))
 }
