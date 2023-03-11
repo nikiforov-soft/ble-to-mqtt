@@ -8,7 +8,7 @@ use btleplug::platform::{Adapter, Manager};
 use chrono::Local;
 use envconfig::Envconfig;
 use futures::stream::StreamExt;
-use log::{error, info, LevelFilter, warn};
+use log::{debug, error, info, LevelFilter, warn};
 use mqtt::properties;
 use paho_mqtt as mqtt;
 use paho_mqtt::{AsyncClient, Topic};
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     while let Some(event) = events.next().await {
         match process_central_event(&config, &adapter, event).await {
             Ok((payload, topic_name)) => {
-                info!("topic: {}", &topic_name);
+                debug!("topic: {}", &topic_name);
                 let topic = Topic::new(&mqtt_client, topic_name, config.mqtt_topic_qos.unwrap_or_default());
                 publish_to_topic(&mqtt_client, topic, &payload).await
             }
