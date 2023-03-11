@@ -12,7 +12,7 @@ RUN cargo build --release
 FROM debian:bookworm
 
 RUN apt-get update && \
-    apt-get install -y openssl bluez wget
+    apt-get install -y openssl bluez
 
 COPY --from="builder" /work/target/release/ble-to-mqtt /app
 
