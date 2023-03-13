@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+  app:
+    image: gcr.io/unafraid/ble-to-mqtt/app:latest
+    container_name: ble-to-mqtt
+    restart: unless-stopped
+    user: "1000"
+    build:
+      context: .
+    env_file:
+      - .env
+    volumes:
+      - /var/run/dbus:/var/run/dbus

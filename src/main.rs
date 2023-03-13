@@ -90,18 +90,6 @@ async fn process_central_event(config: &Config, adapter: &Adapter, event: Centra
         CentralEvent::DeviceConnected(id) => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceConnected", name.clone().unwrap_or(id.to_string()));
-
-            if verbose {
-                let peripheral = adapter.peripheral(&id).await?;
-                if let Ok(Some(prop)) = peripheral.properties().await {
-                    if let Some(local_name) = prop.local_name {
-                        if local_name == "LYWSD03MMC".to_string() {
-                            info!("DeviceConnected: peripheral: {:?}", peripheral);
-                        }
-                    }
-                }
-            }
-
             Event::new(id.to_string(), "DeviceConnected".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceDisconnected(id) => {
@@ -118,13 +106,8 @@ async fn process_central_event(config: &Config, adapter: &Adapter, event: Centra
 
             if verbose {
                 let peripheral = adapter.peripheral(&id).await?;
-                if let Ok(Some(prop)) = peripheral.properties().await {
-                    if let Some(local_name) = prop.local_name {
-                        if local_name == "LYWSD03MMC".to_string() {
-                            info!("ManufacturerDataAdvertisement: peripheral: {:?} manufacturer_data: {:?}", peripheral, manufacturer_data);
-                        }
-                    }
-                }
+                let props = peripheral.properties().await?.unwrap();
+                info!("ManufacturerDataAdvertisement: peripheral: {}, address: {}, local_name: {:?}, rssi: {:?}, tx_power_level: {:?} manufacturer_data: {:?}", peripheral.id().to_string(),  props.address, props.local_name, props.rssi, props.tx_power_level, manufacturer_data);
             }
 
             Event::new(id.to_string(), "ManufacturerDataAdvertisement".into(), mac_address, name, rssi, Some(data), None, None)
@@ -138,13 +121,8 @@ async fn process_central_event(config: &Config, adapter: &Adapter, event: Centra
 
             if verbose {
                 let peripheral = adapter.peripheral(&id).await?;
-                if let Ok(Some(prop)) = peripheral.properties().await {
-                    if let Some(local_name) = prop.local_name {
-                        if local_name == "LYWSD03MMC".to_string() {
-                            info!("ServiceDataAdvertisement: peripheral: {:?} service_data: {:?}", peripheral, service_data);
-                        }
-                    }
-                }
+                let props = peripheral.properties().await?.unwrap();
+                info!("ServiceDataAdvertisement: peripheral: {}, address: {}, local_name: {:?}, rssi: {:?}, tx_power_level: {:?} service_data: {:?}", peripheral.id().to_string(),  props.address, props.local_name, props.rssi, props.tx_power_level, service_data);
             }
 
             Event::new(id.to_string(), "ServiceDataAdvertisement".into(), mac_address, name, rssi, None, Some(data), None)
@@ -155,16 +133,11 @@ async fn process_central_event(config: &Config, adapter: &Adapter, event: Centra
 
             if verbose {
                 let peripheral = adapter.peripheral(&id).await?;
-                if let Ok(Some(prop)) = peripheral.properties().await {
-                    if let Some(local_name) = prop.local_name {
-                        if local_name == "LYWSD03MMC".to_string() {
-                            info!("ServicesAdvertisement: peripheral: {:?} services: {:?}", peripheral, services);
-                        }
-                    }
-                }
+                let props = peripheral.properties().await?.unwrap();
+                info!("ServicesAdvertisement: peripheral: {}, address: {}, local_name: {:?}, rssi: {:?}, tx_power_level: {:?} services: {:?}", peripheral.id().to_string(),  props.address, props.local_name, props.rssi, props.tx_power_level, services);
             }
 
-            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), mac_address, name, rssi, None, None, Some(services))
+            Event::new(id.to_string(), "ServicesAdvertisement".into(), mac_address, name, rssi, None, None, Some(services))
         }
     };
     let payload = to_vec(&event)?;
