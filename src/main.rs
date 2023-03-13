@@ -1,3 +1,4 @@
+use std::env;
 use std::error::Error;
 use std::io::Write;
 use std::time::Duration;
@@ -26,6 +27,8 @@ const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let verbose = env::args().any(|x| x.eq_ignore_ascii_case("-v") || x.eq_ignore_ascii_case("--verbose"));
+
     env_logger::builder()
         .format(|buf, record| {
             writeln!(
@@ -52,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Scanning for ble events..");
     while let Some(event) = events.next().await {
-        match process_central_event(&config, &adapter, event).await {
+        match process_central_event(&config, &adapter, event, verbose).await {
             Ok((payload, topic_name)) => {
                 debug!("topic: {}", &topic_name);
                 let topic = Topic::new(&mqtt_client, topic_name, config.mqtt_topic_qos.unwrap_or_default());
@@ -71,61 +74,109 @@ async fn get_adapter() -> anyhow::Result<Adapter> {
     return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
 
-async fn process_central_event(config: &Config, adapter: &Adapter, event: CentralEvent) -> anyhow::Result<(Vec<u8>, String)> {
+async fn process_central_event(config: &Config, adapter: &Adapter, event: CentralEvent, verbose: bool) -> anyhow::Result<(Vec<u8>, String)> {
     let topic: String;
     let event = match event {
         CentralEvent::DeviceDiscovered(id) => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDiscovered", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "DeviceDiscovered".into(), name, rssi, None, None, None)
+            Event::new(id.to_string(), "DeviceDiscovered".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceUpdated(id) => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceUpdated", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "DeviceUpdated".into(), name, rssi, None, None, None)
+            Event::new(id.to_string(), "DeviceUpdated".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceConnected(id) => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceConnected", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "DeviceConnected".into(), name, rssi, None, None, None)
+
+            if verbose {
+                let peripheral = adapter.peripheral(&id).await?;
+                if let Ok(Some(prop)) = peripheral.properties().await {
+                    if let Some(local_name) = prop.local_name {
+                        if local_name == "LYWSD03MMC".to_string() {
+                            info!("DeviceConnected: peripheral: {:?}", peripheral);
+                        }
+                    }
+                }
+            }
+
+            Event::new(id.to_string(), "DeviceConnected".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceDisconnected(id) => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "DeviceDisconnected", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "DeviceDisconnected".into(), name, rssi, None, None, None)
+            Event::new(id.to_string(), "DeviceDisconnected".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
             let data = manufacturer_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "ManufacturerDataAdvertisement", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "ManufacturerDataAdvertisement".into(), name, rssi, Some(data), None, None)
+
+            if verbose {
+                let peripheral = adapter.peripheral(&id).await?;
+                if let Ok(Some(prop)) = peripheral.properties().await {
+                    if let Some(local_name) = prop.local_name {
+                        if local_name == "LYWSD03MMC".to_string() {
+                            info!("ManufacturerDataAdvertisement: peripheral: {:?} manufacturer_data: {:?}", peripheral, manufacturer_data);
+                        }
+                    }
+                }
+            }
+
+            Event::new(id.to_string(), "ManufacturerDataAdvertisement".into(), mac_address, name, rssi, Some(data), None, None)
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "ServiceDataAdvertisement", name.clone().unwrap_or(id.to_string()));
             let data = service_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
-            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), name, rssi, None, Some(data), None)
+
+            if verbose {
+                let peripheral = adapter.peripheral(&id).await?;
+                if let Ok(Some(prop)) = peripheral.properties().await {
+                    if let Some(local_name) = prop.local_name {
+                        if local_name == "LYWSD03MMC".to_string() {
+                            info!("ServiceDataAdvertisement: peripheral: {:?} service_data: {:?}", peripheral, service_data);
+                        }
+                    }
+                }
+            }
+
+            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), mac_address, name, rssi, None, Some(data), None)
         }
         CentralEvent::ServicesAdvertisement { id, services } => {
-            let (name, rssi) = get_properties(adapter, &id).await?;
+            let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
             topic = format!("{}/{}/{}", config.mqtt_topic, "ServicesAdvertisement", name.clone().unwrap_or(id.to_string()));
-            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), name, rssi, None, None, Some(services))
+
+            if verbose {
+                let peripheral = adapter.peripheral(&id).await?;
+                if let Ok(Some(prop)) = peripheral.properties().await {
+                    if let Some(local_name) = prop.local_name {
+                        if local_name == "LYWSD03MMC".to_string() {
+                            info!("ServicesAdvertisement: peripheral: {:?} services: {:?}", peripheral, services);
+                        }
+                    }
+                }
+            }
+
+            Event::new(id.to_string(), "ServiceDataAdvertisement".into(), mac_address, name, rssi, None, None, Some(services))
         }
     };
     let payload = to_vec(&event)?;
     Ok((payload, topic))
 }
 
-async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId) -> anyhow::Result<(Option<String>, Option<i16>)> {
+async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId) -> anyhow::Result<(Option<String>, String, Option<i16>)> {
     let peripheral = adapter.peripheral(&id).await?;
     if let Some(properties) = peripheral.properties().await? {
-        return Ok((properties.local_name, properties.rssi));
+        return Ok((properties.local_name, properties.address.to_string(), properties.rssi));
     }
-    Ok((None, None))
+    Ok((None, peripheral.address().to_string(), None))
 }
 
 async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {

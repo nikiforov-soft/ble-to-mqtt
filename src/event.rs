@@ -9,6 +9,8 @@ pub struct Event {
 
     pub event: String,
 
+    pub mac_address: String,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_name: Option<String>,
 
@@ -29,6 +31,7 @@ impl Event {
     pub(crate) fn new(
         id: String,
         event: String,
+        mac_address: String,
         local_name: Option<String>,
         rssi: Option<i16>,
         manufacturer_data: Option<HashMap<u16, String>>,
@@ -38,6 +41,7 @@ impl Event {
         Self {
             id,
             event,
+            mac_address,
             local_name,
             rssi,
             manufacturer_data,
