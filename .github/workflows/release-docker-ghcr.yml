@@ -44,9 +44,12 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             latest
-
-      - name: Extract version
-        run: echo "VERSION=$(echo ${GITHUB_REF##*/} | sed -e 's/^v//')" >> $GITHUB_ENV
+          labels: |
+            org.opencontainers.image.vendor="Rumen Nikiforov"
+            org.opencontainers.image.url="https://github.com/nikiforov-soft/ble-to-mqtt"
+            org.opencontainers.image.title="BLE to MQTT bridge"
+            org.opencontainers.image.description="Send all Bluetooth Low Energy events to MQTT topic"
+            org.opencontainers.image.documentation="https://github.com/nikiforov-soft/ble-to-mqtt"
 
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v3
