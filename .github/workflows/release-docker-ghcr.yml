@@ -45,9 +45,8 @@ jobs:
             type=semver,pattern={{version}}
             latest
 
-      - name: Convert Docker image to lower case
-        run: |
-          echo "VERSION=$(echo ${GITHUB_REF##*/} | sed -e 's/^v//')" >> $GITHUB_ENV
+      - name: Extract version
+        run: echo "VERSION=$(echo ${GITHUB_REF##*/} | sed -e 's/^v//')" >> $GITHUB_ENV
 
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v3
