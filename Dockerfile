@@ -3,9 +3,9 @@ FROM rust:1.68.0-bookworm as builder
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 RUN apt-get update && \
-    apt-get install -y libdbus-1-dev pkg-config libssl-dev cmake
+    apt-get install -y libdbus-1-dev pkg-config cmake
 
-WORKDIR /work
+WORKDIR /src
 
 COPY . .
 
@@ -14,8 +14,8 @@ RUN cargo build --release
 FROM debian:bookworm
 
 RUN apt-get update && \
-    apt-get install -y openssl bluez
+    apt-get install -y libdbus-1-3
 
-COPY --from="builder" /work/target/release/ble-to-mqtt /app
+COPY --from="builder" /src/target/release/ble-to-mqtt /app
 
 CMD ["/app", "-v"]

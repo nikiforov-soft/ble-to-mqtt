@@ -41,12 +41,23 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            latest
+          labels: |
+            org.opencontainers.image.vendor="Rumen Nikiforov"
+            org.opencontainers.image.url="https://github.com/nikiforov-soft/ble-to-mqtt"
+            org.opencontainers.image.title="BLE to MQTT bridge"
+            org.opencontainers.image.description="Send all Bluetooth Low Energy events to MQTT topic"
+            org.opencontainers.image.documentation="https://github.com/nikiforov-soft/ble-to-mqtt"
 
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ env.VERSION }}
           platforms: ${{ env.PLATFORMS }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
