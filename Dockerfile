@@ -18,4 +18,4 @@ RUN apt-get update && \
 
 COPY --from="builder" /work/target/release/ble-to-mqtt /app
 
-CMD ["/app"]
+CMD ["/app", "-v"]

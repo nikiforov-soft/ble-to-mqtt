@@ -9,21 +9,17 @@ use btleplug::platform::{Adapter, Manager};
 use chrono::Local;
 use envconfig::Envconfig;
 use futures::stream::StreamExt;
-use log::{debug, error, info, LevelFilter, warn};
-use mqtt::properties;
-use paho_mqtt as mqtt;
-use paho_mqtt::{AsyncClient, Topic};
-use paho_mqtt::Error::PahoDescr;
+use log::{debug, error, info, LevelFilter};
+use rumqttc::v5::{AsyncClient, MqttOptions};
+use rumqttc::v5::mqttbytes::QoS;
 use serde_json::to_vec;
-use tokio::time;
+use tokio::{task, time};
 
 use config::Config;
 use event::{*};
 
 mod config;
 mod event;
-
-const MQTT_CLIENT_DISCONNECTED: i32 = -3;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -46,20 +42,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Initializing configuration");
     let config = Config::init_from_env()?;
 
-    info!("Connecting to mqtt broker mqtt://{}:{} ..", config.mqtt_host, config.mqtt_port);
-    let mqtt_client = mqtt_init(&config).await?;
+    let mut mqtt_options = MqttOptions::new(config.mqtt_client_id.clone(), config.mqtt_host.clone(), config.mqtt_port.clone());
+    mqtt_options.set_keep_alive(Duration::from_secs(5));
+
+    info!("Connecting to mqtt broker mqtt://{}:{} ..", config.mqtt_host.clone(), config.mqtt_port.clone());
+    let (mqtt_client, mut event_loop) = AsyncClient::new(mqtt_options, 10);
 
     let adapter = get_adapter().await?;
     let mut events = adapter.events().await?;
     adapter.start_scan(ScanFilter::default()).await?;
+
+    task::spawn(async move {
+        info!("Processing mqtt events..");
+        loop {
+            match event_loop.poll().await {
+                Ok(_) => {}
+                Err(err) => error!("event loop error: {:?}", err)
+            }
+        }
+    });
 
     info!("Scanning for ble events..");
     while let Some(event) = events.next().await {
         match process_central_event(&config, &adapter, event, verbose).await {
             Ok((payload, topic_name)) => {
                 debug!("topic: {}", &topic_name);
-                let topic = Topic::new(&mqtt_client, topic_name, config.mqtt_topic_qos.unwrap_or_default());
-                publish_to_topic(&mqtt_client, topic, &payload).await
+                publish_to_topic(&mqtt_client, topic_name, payload).await
             }
             Err(err) => error!("Failed to process central event: {:?}", err)
         }
@@ -152,56 +160,13 @@ async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId
     Ok((None, peripheral.address().to_string(), None))
 }
 
-async fn mqtt_init(config: &Config) -> anyhow::Result<AsyncClient> {
-    let create_opts = mqtt::CreateOptionsBuilder::new()
-        .server_uri(format!("mqtt://{}:{}", config.mqtt_host, config.mqtt_port))
-        .client_id(config.mqtt_client_id.clone().unwrap_or_default())
-        .finalize();
-
-    let mqtt_client = AsyncClient::new(create_opts)?;
-
-    let props = properties! {
-        mqtt::PropertyCode::SessionExpiryInterval => 86400,
-    };
-
-    let conn_opts = mqtt::ConnectOptionsBuilder::new_v5()
-        .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_interval_seconds))
-        .clean_start(config.mqtt_clean_start)
-        .properties(props)
-        .user_name(config.mqtt_username.clone().unwrap_or_default())
-        .password(config.mqtt_password.clone().unwrap_or_default())
-        .finalize();
-
-    mqtt_client.connect(conn_opts).await?;
-
-    Ok(mqtt_client)
-}
-
-async fn publish_to_topic<'a>(mqtt_client: &AsyncClient, topic: Topic<'a>, payload: &Vec<u8>) {
+async fn publish_to_topic(mqtt_client: &AsyncClient, topic: String, payload: Vec<u8>) {
     for _ in 1..=30 {
-        match topic.publish(payload.to_owned()).await {
+        match mqtt_client.publish(topic.to_owned(), QoS::AtMostOnce, false, payload.clone()).await {
             Ok(_) => { return; }
-            Err(err) => match err {
-                PahoDescr(id, reason) => {
-                    if id != MQTT_CLIENT_DISCONNECTED {
-                        error!("Failed to publish message id: {:?} reason: {:?}", id, reason);
-                        time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-
-                    warn!("Connection to the mqtt broker was lost, attempting to reconnect..");
-                    match mqtt_client.reconnect().await {
-                        Ok(_) => info!("Reconnected"),
-                        Err(reconnect_err) => {
-                            error!("Failed to reconnect: {:?}", reconnect_err);
-                            time::sleep(Duration::from_secs(1)).await;
-                        }
-                    }
-                }
-                _ => {
-                    error!("Failed to publish message: {:?}", err);
-                    time::sleep(Duration::from_secs(1)).await;
-                }
+            Err(err) => {
+                error!("Failed to publish message: {:?}", err);
+                time::sleep(Duration::from_secs(1)).await;
             }
         }
     }

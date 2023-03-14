@@ -14,8 +14,8 @@ pub struct Config {
     #[envconfig(from = "BLE_TO_MQTT_PASSWORD")]
     pub mqtt_password: Option<String>,
 
-    #[envconfig(from = "BLE_TO_MQTT_CLIENT_ID")]
-    pub mqtt_client_id: Option<String>,
+    #[envconfig(from = "BLE_TO_MQTT_CLIENT_ID", default = "ble-to-mqtt-bridge")]
+    pub mqtt_client_id: String,
 
     #[envconfig(from = "BLE_TO_MQTT_TOPIC")]
     pub mqtt_topic: String,
