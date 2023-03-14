@@ -15,34 +15,64 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-#        target: [ x86_64-unknown-linux-musl, x86_64-pc-windows-gnu, aarch64-apple-darwin ]
-        target: [ x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu ]
+        target: [ x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu, x86_64-apple-darwin, aarch64-apple-darwin ]
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v3
 
-      - name: Setup Rust
+      - name: "Setup Rust"
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-gnu' }}
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: 1.68
           target: ${{ matrix.target }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: "Install dependencies (Linux)"
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+        run: sudo apt update && sudo apt install -y libdbus-1-dev pkg-config
 
-      - name: Build target
+      - name: "Install dependencies (Windows)"
+        if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
+        run: sudo apt update && sudo apt install -y pkg-config gcc-mingw-w64-x86-64
+
+      - name: "Build target (Linux and Windows)"
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-gnu' }}
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: "Build target (macOS amd64)"
+        if: ${{ matrix.target == 'x86_64-apple-darwin' }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/src \
+            -w /src \
+            -e CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+            -e CC=o64-clang \
+            -e CXX=o64-clang++ \
+            -e LIBZ_SYS_STATIC=1 \
+            joseluisq/rust-linux-darwin-builder:1.68.0 \
+            sh -c "cargo build --release --target x86_64-apple-darwin"
+
+      - name: "Build target (macOS arm64)"
+        if: ${{ matrix.target == 'aarch64-apple-darwin' }}
+        run: |
+          docker run --rm \
+            -v $PWD:/src \
+            -w /src \
+            -e CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+            -e CC=oa64-clang \
+            -e CXX=oa64-clang++ \
+            -e LIBZ_SYS_STATIC=1 \
+            joseluisq/rust-linux-darwin-builder:1.68.0 \
+            sh -c "cargo build --release --target aarch64-apple-darwin"
+
+      - name: "Package"
         shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }}
-
-      - name: Package
-        shell: bash
-        run: |
-          cd target/${{ matrix.target }}/release          
-          tar czf ../../../${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz ${{ github.event.repository.name }}
+          cd ${{ github.workspace }}/target/${{ matrix.target }}/release
+          tar czf ${{ github.workspace }}/${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz $([ -f "${{ github.event.repository.name }}.exe" ] && echo "${{ github.event.repository.name }}.exe" || echo "${{ github.event.repository.name }}")
           cd -
 
-      - name: Publish
+      - name: "Publish"
         uses: softprops/action-gh-release@v1
         with:
           files: '${{ github.event.repository.name }}-*'
