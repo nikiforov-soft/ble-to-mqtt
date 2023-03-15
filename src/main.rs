@@ -1,19 +1,21 @@
 use std::env;
 use std::error::Error;
-use std::io::Write;
+use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::Context;
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
-use chrono::Local;
 use envconfig::Envconfig;
+use futures::FutureExt;
+use futures::Stream;
 use futures::stream::StreamExt;
 use log::{debug, error, info, LevelFilter};
-use rumqttc::v5::{AsyncClient, MqttOptions};
+use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions};
 use rumqttc::v5::mqttbytes::QoS;
 use serde_json::to_vec;
-use tokio::{task, time};
+use tokio::{select, time};
+use tokio::signal;
 
 use config::Config;
 use event::{*};
@@ -26,15 +28,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let verbose = env::args().any(|x| x.eq_ignore_ascii_case("-v") || x.eq_ignore_ascii_case("--verbose"));
 
     env_logger::builder()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "[{}] {}: {}",
-                Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
         .filter_level(LevelFilter::Info)
         .init();
 
@@ -51,29 +44,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let adapter = get_adapter().await?;
     let mut events = adapter.events().await?;
     adapter.start_scan(ScanFilter::default()).await?;
+    info!("Scanning for ble events..");
 
-    task::spawn(async move {
-        info!("Processing mqtt events..");
-        loop {
-            match event_loop.poll().await {
-                Ok(_) => {}
-                Err(err) => error!("event loop error: {:?}", err)
+    info!("Processing events..");
+    loop {
+        select! {
+            _ = process_ble_events(&config, &adapter, &mqtt_client, verbose, &mut events).fuse() => {}
+            _ = process_mqtt_event_loop(&mut event_loop).fuse() => {}
+            _ = process_ctrl_c().fuse() => {
+                break
             }
         }
-    });
+    }
 
-    info!("Scanning for ble events..");
-    while let Some(event) = events.next().await {
+    Ok(())
+}
+
+async fn process_ctrl_c() {
+    if let Ok(_) = signal::ctrl_c().await {
+        info!("Shutting down..");
+        return;
+    }
+}
+
+async fn process_mqtt_event_loop(event_loop: &mut EventLoop) {
+    if let Err(err) = event_loop.poll().await {
+        error!("event loop error: {:?}", err)
+    }
+}
+
+async fn process_ble_events(config: &Config, adapter: &Adapter, mqtt_client: &AsyncClient, verbose: bool, events: &mut Pin<Box<dyn Stream<Item=CentralEvent> + Send>>) {
+    if let Some(event) = events.next().await {
         match process_central_event(&config, &adapter, event, verbose).await {
             Ok((payload, topic_name)) => {
                 debug!("topic: {}", &topic_name);
+
                 publish_to_topic(&mqtt_client, topic_name, payload).await
             }
             Err(err) => error!("Failed to process central event: {:?}", err)
         }
     }
-
-    Ok(())
 }
 
 async fn get_adapter() -> anyhow::Result<Adapter> {
