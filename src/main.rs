@@ -31,17 +31,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .filter_level(LevelFilter::Info)
         .init();
 
-
     info!("Initializing configuration");
     let config = Config::init_from_env()?;
 
-    let mut mqtt_options = MqttOptions::new(config.mqtt_client_id.clone(), config.mqtt_host.clone(), config.mqtt_port.clone());
-    mqtt_options.set_keep_alive(Duration::from_secs(5));
-
     info!("Connecting to mqtt broker mqtt://{}:{} ..", config.mqtt_host.clone(), config.mqtt_port.clone());
-    let (mqtt_client, mut event_loop) = AsyncClient::new(mqtt_options, 10);
+    let (mqtt_client, mut event_loop) = init_mqtt_client(&config);
 
-    let adapter = get_adapter().await?;
+    let adapter = init_ble_adapter().await?;
     let mut events = adapter.events().await?;
     adapter.start_scan(ScanFilter::default()).await?;
     info!("Scanning for ble events..");
@@ -58,6 +54,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn init_mqtt_client(config: &Config) -> (AsyncClient, EventLoop){
+    let mut mqtt_options = MqttOptions::new(config.mqtt_client_id.clone(), config.mqtt_host.clone(), config.mqtt_port.clone());
+    mqtt_options.set_keep_alive(Duration::from_secs(5));
+    return AsyncClient::new(mqtt_options, 10)
+}
+
+async fn init_ble_adapter() -> anyhow::Result<Adapter> {
+    let manager = Manager::new().await?;
+    let adapters = manager.adapters().await?;
+    return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
 
 async fn process_ctrl_c() {
@@ -84,12 +92,6 @@ async fn process_ble_events(config: &Config, adapter: &Adapter, mqtt_client: &As
             Err(err) => error!("Failed to process central event: {:?}", err)
         }
     }
-}
-
-async fn get_adapter() -> anyhow::Result<Adapter> {
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    return Ok(adapters.into_iter().nth(0).context("no adapter")?);
 }
 
 async fn process_central_event(config: &Config, adapter: &Adapter, event: CentralEvent, verbose: bool) -> anyhow::Result<(Vec<u8>, String)> {
