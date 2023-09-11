@@ -8,6 +8,9 @@ pub struct Config {
     #[envconfig(from = "BLE_TO_MQTT_PORT", default = "1883")]
     pub mqtt_port: u16,
 
+    #[envconfig(from = "BLE_TO_MQTT_USE_TLS_TRANSPORT", default = "false")]
+    pub mqtt_use_tls_transport: bool,
+
     #[envconfig(from = "BLE_TO_MQTT_USERNAME")]
     pub mqtt_username: Option<String>,
 

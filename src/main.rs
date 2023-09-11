@@ -11,6 +11,7 @@ use futures::FutureExt;
 use futures::Stream;
 use futures::stream::StreamExt;
 use log::{debug, error, info, LevelFilter};
+use rumqttc::Transport;
 use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions};
 use rumqttc::v5::mqttbytes::{qos, QoS};
 use serde_json::to_vec;
@@ -60,6 +61,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 fn init_mqtt_client(config: &Config) -> (AsyncClient, EventLoop) {
     let mut mqtt_options = MqttOptions::new(config.mqtt_client_id.clone(), config.mqtt_host.clone(), config.mqtt_port.clone());
+    if config.mqtt_use_tls_transport {
+        mqtt_options.set_transport(Transport::tls_with_default_config());
+    }
     mqtt_options.set_keep_alive(Duration::from_secs(5));
     mqtt_options.set_clean_start(config.mqtt_clean_start);
     if let Some(username) = config.mqtt_username.clone() {
