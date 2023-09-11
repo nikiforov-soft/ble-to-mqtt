@@ -12,7 +12,7 @@ use futures::Stream;
 use futures::stream::StreamExt;
 use log::{debug, error, info, LevelFilter};
 use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions};
-use rumqttc::v5::mqttbytes::QoS;
+use rumqttc::v5::mqttbytes::{qos, QoS};
 use serde_json::to_vec;
 use tokio::{select, time};
 use tokio::signal;
@@ -58,10 +58,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn init_mqtt_client(config: &Config) -> (AsyncClient, EventLoop){
+fn init_mqtt_client(config: &Config) -> (AsyncClient, EventLoop) {
     let mut mqtt_options = MqttOptions::new(config.mqtt_client_id.clone(), config.mqtt_host.clone(), config.mqtt_port.clone());
     mqtt_options.set_keep_alive(Duration::from_secs(5));
-    return AsyncClient::new(mqtt_options, 10)
+    mqtt_options.set_clean_start(config.mqtt_clean_start);
+    if let Some(username) = config.mqtt_username.clone() {
+        if let Some(password) = config.mqtt_password.clone() {
+            mqtt_options.set_credentials(username.to_owned(), password.to_owned());
+        }
+    }
+    return AsyncClient::new(mqtt_options, 10);
 }
 
 async fn init_ble_adapter() -> anyhow::Result<Adapter> {
@@ -90,7 +96,7 @@ async fn process_ble_events(config: &Config, adapter: &Adapter, mqtt_client: &As
             Ok((payload, topic_name)) => {
                 debug!("topic: {}", &topic_name);
 
-                publish_to_topic(&mqtt_client, topic_name, payload).await
+                publish_to_topic(&mqtt_client, topic_name, config.mqtt_topic_qos, payload).await
             }
             Err(err) => error!("Failed to process central event: {:?}", err)
         }
@@ -175,9 +181,9 @@ async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId
     Ok((None, peripheral.address().to_string(), None))
 }
 
-async fn publish_to_topic(mqtt_client: &AsyncClient, topic: String, payload: Vec<u8>) {
+async fn publish_to_topic(mqtt_client: &AsyncClient, topic: String, qos_type: u8, payload: Vec<u8>) {
     for _ in 1..=30 {
-        match mqtt_client.publish(topic.to_owned(), QoS::AtMostOnce, false, payload.clone()).await {
+        match mqtt_client.publish(topic.to_owned(), qos(qos_type).unwrap_or(QoS::AtMostOnce), false, payload.clone()).await {
             Ok(_) => { return; }
             Err(err) => {
                 error!("Failed to publish message: {:?}", err);

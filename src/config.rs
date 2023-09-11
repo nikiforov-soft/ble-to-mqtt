@@ -20,8 +20,8 @@ pub struct Config {
     #[envconfig(from = "BLE_TO_MQTT_TOPIC")]
     pub mqtt_topic: String,
 
-    #[envconfig(from = "BLE_TO_MQTT_TOPIC_QOS")]
-    pub mqtt_topic_qos: Option<i32>,
+    #[envconfig(from = "BLE_TO_MQTT_TOPIC_QOS", default = "0")]
+    pub mqtt_topic_qos: u8,
 
     #[envconfig(from = "BLE_TO_MQTT_KEEP_ALIVE_INTERVAL_SEC", default = "10")]
     pub mqtt_keep_alive_interval_seconds: u64,
