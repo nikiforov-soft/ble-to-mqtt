@@ -20,3 +20,5 @@ hex = "0.4.3"
 anyhow = "1.0.86"
 log = "0.4.22"
 env_logger = "0.11.5"
+memphis-rust-community = { version = "0.3.2", features = ["full"] }
+async-trait = "0.1.73"
