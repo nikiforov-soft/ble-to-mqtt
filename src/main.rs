@@ -46,8 +46,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Scanning for ble events..");
 
     info!("Processing events..");
+    let mut ble_scan_restart_interval = time::interval(time::Duration::from_secs(config.bt_auto_scan_restart_interval_seconds));
     loop {
         select! {
+            _ = &mut Box::pin(ble_scan_restart_interval.tick()) => {
+                if let Err(err) = adapter.stop_scan().await {
+                    error!("failed to stop scanner: {:?}", err)
+                }
+                if let Err(err) = adapter.start_scan(ScanFilter::default()).await {
+                    error!("failed to start scanner: {:?}", err)
+                }
+                info!("Restarting bt scanner")
+            },
             _ = process_ble_events(&config, &adapter, &mqtt_client, verbose, &mut events).fuse() => {}
             _ = process_mqtt_event_loop(&mut event_loop).fuse() => {}
             _ = process_ctrl_c().fuse() => {

@@ -31,4 +31,7 @@ pub struct Config {
 
     #[envconfig(from = "BLE_TO_MQTT_CLEAN_START", default = "false")]
     pub mqtt_clean_start: bool,
+
+    #[envconfig(from = "BLE_TO_MQTT_BT_AUTO_SCAN_RESTART_INTERVAL_SEC", default = "3600")]
+    pub bt_auto_scan_restart_interval_seconds: u64,
 }
