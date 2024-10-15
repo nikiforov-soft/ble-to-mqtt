@@ -92,6 +92,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     adapter.stop_scan().await?;
+    publisher.destroy().await;
 
     Ok(())
 }
@@ -100,7 +101,8 @@ async fn init_ble_adapter() -> anyhow::Result<Adapter> {
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
     info!("Found {} bluetooth adapters", adapters.len());
-    return Ok(adapters.into_iter().nth(0).context("no adapter")?);
+
+    Ok(adapters.into_iter().nth(0).context("no adapter")?)
 }
 
 async fn process_ctrl_c() {

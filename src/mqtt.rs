@@ -51,13 +51,13 @@ impl Publisher for Mqtt {
             }
         }
     }
-    //
-    // async fn destroy(&self) {
-    //     if let Err(e) = self.client.try_disconnect() {
-    //         error!("Failed to try to disconnect mqtt client: {:?}", e);
-    //     }
-    //     if let Err(e) = self.client.disconnect().await {
-    //         error!("Failed to disconnect mqtt client: {:?}", e);
-    //     }
-    // }
+
+    async fn destroy(self: Box<Self>) {
+        if let Err(e) = self.client.try_disconnect() {
+            error!("Failed to try to disconnect mqtt client: {:?}", e);
+        }
+        if let Err(e) = self.client.disconnect().await {
+            error!("Failed to disconnect mqtt client: {:?}", e);
+        }
+    }
 }

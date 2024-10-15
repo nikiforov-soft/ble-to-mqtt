@@ -50,9 +50,9 @@ impl Publisher for Memphis {
         }
     }
 
-    // async fn destroy(&self) {
-    //     // if let Err(e) = self.producer.destroy().await {
-    //     //     error!("Failed to destroy producer: {:?}", e);
-    //     // }
-    // }
+    async fn destroy(self: Box<Self>) {
+        if let Err(e) = self.producer.destroy().await {
+            error!("Failed to destroy producer: {:?}", e);
+        }
+    }
 }
