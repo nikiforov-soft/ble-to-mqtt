@@ -22,7 +22,7 @@ impl Mqtt {
         if config.mqtt_use_tls_transport {
             mqtt_options.set_transport(Transport::tls_with_default_config());
         }
-        mqtt_options.set_keep_alive(Duration::from_secs(5));
+        mqtt_options.set_keep_alive(Duration::from_secs(config.mqtt_keep_alive_interval_seconds));
         mqtt_options.set_clean_start(config.mqtt_clean_start);
         if let Some(username) = config.mqtt_username.clone() {
             if let Some(password) = config.mqtt_password.clone() {

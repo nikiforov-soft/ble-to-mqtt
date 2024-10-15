@@ -112,7 +112,7 @@ async fn process_ctrl_c() {
     }
 }
 
-async fn process_ble_events<'a>(topic_name: String, adapter: &Adapter, publisher: &mut Box<dyn Publisher>, verbose: bool, events: &mut Pin<Box<dyn Stream<Item=CentralEvent> + Send>>) {
+async fn process_ble_events(topic_name: String, adapter: &Adapter, publisher: &mut Box<dyn Publisher>, verbose: bool, events: &mut Pin<Box<dyn Stream<Item=CentralEvent> + Send>>) {
     if let Some(event) = events.next().await {
         match process_central_event(topic_name, &adapter, event, verbose).await {
             Ok((payload, topic_name)) => {
@@ -140,22 +140,22 @@ async fn process_central_event(topic_name: String, adapter: &Adapter, event: Cen
     let event = match event {
         CentralEvent::DeviceDiscovered(id) => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("DeviceDiscovered".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("DeviceDiscovered".into(), topic_name, adapter, Some(&id)).await?;
             Event::new(id.to_string(), "DeviceDiscovered".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceUpdated(id) => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("DeviceUpdated".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("DeviceUpdated".into(), topic_name, adapter, Some(&id)).await?;
             Event::new(id.to_string(), "DeviceUpdated".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceConnected(id) => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("DeviceConnected".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("DeviceConnected".into(), topic_name, adapter, Some(&id)).await?;
             Event::new(id.to_string(), "DeviceConnected".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::DeviceDisconnected(id) => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("DeviceDisconnected".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("DeviceDisconnected".into(), topic_name, adapter, Some(&id)).await?;
             Event::new(id.to_string(), "DeviceDisconnected".into(), mac_address, name, rssi, None, None, None)
         }
         CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
@@ -163,7 +163,7 @@ async fn process_central_event(topic_name: String, adapter: &Adapter, event: Cen
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("ManufacturerDataAdvertisement".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("ManufacturerDataAdvertisement".into(), topic_name, adapter, Some(&id)).await?;
 
             if verbose {
                 let peripheral = adapter.peripheral(&id).await?;
@@ -175,7 +175,7 @@ async fn process_central_event(topic_name: String, adapter: &Adapter, event: Cen
         }
         CentralEvent::ServiceDataAdvertisement { id, service_data } => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("ServiceDataAdvertisement".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("ServiceDataAdvertisement".into(), topic_name, adapter, Some(&id)).await?;
             let data = service_data.iter().
                 map(|(k, v)| (k.clone(), hex::encode(v))).
                 collect();
@@ -190,7 +190,7 @@ async fn process_central_event(topic_name: String, adapter: &Adapter, event: Cen
         }
         CentralEvent::ServicesAdvertisement { id, services } => {
             let (name, mac_address, rssi) = get_properties(adapter, &id).await?;
-            topic = format_topic("ServicesAdvertisement".into(), topic_name, adapter, &id).await?;
+            topic = format_topic("ServicesAdvertisement".into(), topic_name, adapter, Some(&id)).await?;
 
             if verbose {
                 let peripheral = adapter.peripheral(&id).await?;
@@ -199,6 +199,15 @@ async fn process_central_event(topic_name: String, adapter: &Adapter, event: Cen
             }
 
             Event::new(id.to_string(), "ServicesAdvertisement".into(), mac_address, name, rssi, None, None, Some(services))
+        }
+        CentralEvent::StateUpdate(state) => {
+            topic = format_topic(format!("StateUpdate/{:?}", state).into(), topic_name, adapter, None).await?;
+
+            if verbose {
+                info!("StateUpdate: state: {:?}", state);
+            }
+
+            Event::new("".into(), "StateUpdate".into(), "".into(), None, None, None, None, None)
         }
     };
     let payload = to_vec(&event)?;
@@ -213,14 +222,16 @@ async fn get_properties(adapter: &Adapter, id: &btleplug::platform::PeripheralId
     Ok((None, peripheral.address().to_string(), None))
 }
 
-async fn format_topic(kind: String, topic: String, adapter: &Adapter, id: &btleplug::platform::PeripheralId) -> anyhow::Result<String> {
+async fn format_topic(kind: String, topic: String, adapter: &Adapter, id: Option<&btleplug::platform::PeripheralId>) -> anyhow::Result<String> {
     let mut p = Path::new(topic.clone().as_str()).join(kind);
-    p = p.join(id.to_string().replace("/", "_"));
+    if let Some(id) = id {
+        p = p.join(id.to_string().replace("/", "_"));
 
-    let peripheral = adapter.peripheral(&id).await?;
-    if let Some(properties) = peripheral.properties().await? {
-        if let Some(name) = properties.local_name {
-            p = p.join(name);
+        let peripheral = adapter.peripheral(&id).await?;
+        if let Some(properties) = peripheral.properties().await? {
+            if let Some(name) = properties.local_name {
+                p = p.join(name);
+            }
         }
     }
 
