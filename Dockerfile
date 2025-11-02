@@ -1,4 +1,4 @@
-FROM rust:1.80-bookworm AS builder
+FROM rust:1.86-bookworm AS builder
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
